@@ -1,0 +1,149 @@
+/*
+SINGLE ULTRASONIC PROGRAM
+This program can be used to control a bot. 
+- It uses one ultrasonic sensors placed in front direction.
+- This sensor detects if there is any obstacle before it within given threshold distance.
+*/
+
+#include <NewPing.h>            // Used NewPing library to ping ultrasonic sensors
+
+// Macros (they live only during compilation and these values are replaced during runtime)
+#define FRONT 0                // Sensor directions
+#define THRESHOLD 20          // Obstacle distance threshold
+
+#define SONAR_NUM     1      // Numbe of sensors
+#define MAX_DISTANCE  300    // Ultrasonic will ping till this max distance
+#define PING_INTERVAL 33     // Ultrasonic ping interval
+
+// Constant variables, usually used to store pin values
+const int leftWheelP = 9;          // Bot Wheel Pins
+const int leftWheelN = 8;
+const int rightWheelP = 11;
+const int rightWheelN = 10;
+
+const int led = 13;                // Indicator LED pin (using default LED pin)
+
+const int echoFront = 7;          // Sensors' echo & trig pins
+const int trigFront = 12;
+
+NewPing sonar[SONAR_NUM] = {                    // Sensors Array
+  NewPing(trigFront, echoFront, MAX_DISTANCE)
+};
+
+unsigned long pingTimer[SONAR_NUM]; // Holds the times when the next ping should happen for each sensor
+unsigned int distance[SONAR_NUM];   // Array where the ping distances are stored
+uint8_t currentSensor = 0;          // Keeps track of which sensor is active
+
+// This method is called once, this is used to initilize things
+void setup() {                                 
+
+    Serial.begin(115200);                      // For serial output (used for debugging)
+    
+    pingTimer[0] = millis() + 75;              // Setting the starting time for each sensor
+    for (uint8_t i = 1; i < SONAR_NUM; i++) 
+      pingTimer[i] = pingTimer[i - 1] + PING_INTERVAL;    
+      
+    pinMode(leftWheelP, OUTPUT);               // Setting pin mode of wheels and led (pin mode of ultrasonic pins is taken care by library itself)
+    pinMode(leftWheelN, OUTPUT);     
+    pinMode(rightWheelP, OUTPUT);     
+    pinMode(rightWheelN, OUTPUT);     
+    pinMode(led, OUTPUT);   
+    
+}
+
+// This method is called again and again
+void loop() {                           
+  
+  for (uint8_t i = 0; i < SONAR_NUM; i++) {         // Loop through all the sensors
+    if (millis() >= pingTimer[i]) {                 // Is it this sensor's time to ping?
+      pingTimer[i] += PING_INTERVAL * SONAR_NUM;    // Setting next time this sensor will be pinged
+      if (i == 0 && currentSensor == SONAR_NUM - 1) // If sensor ping cycle is completed - do something with the results
+      {
+        
+        for (uint8_t i = 0; i < SONAR_NUM; i++) {      // Printing detected obstacle distances (for debugging purpose)
+          Serial.print(i);
+          Serial.print("=");
+          Serial.print(distance[i]);
+          Serial.print("cm ");
+        }
+        Serial.println();  
+        
+        
+        if(distance[FRONT] != 0){  // ignoring 0s (sometime sensors through 0 unnecessarily)
+
+          if( distance[FRONT] > THRESHOLD )                      // If FRONT is clear
+          {                                                
+              moveForward();
+          }
+          else                                                 // If FRONT is blocked
+          {
+              stopBot();
+              delay(10);
+              moveBackward();
+          }
+        }
+      }      
+      sonar[currentSensor].timer_stop();          // Making sure previous timer is canceled before starting a new ping (insurance)
+      currentSensor = i;                          // Sensor being accessed
+      distance[currentSensor] = 0;                // Making distance zero in case there's no ping echo for this sensor
+      sonar[currentSensor].ping_timer(echoCheck); // Do the ping (processing continues, interrupt will call echoCheck to look for echo)
+    }
+  }
+}
+
+// If ping received, set the sensor distance to array
+void echoCheck() { 
+  if (sonar[currentSensor].check_timer())
+    distance[currentSensor] = sonar[currentSensor].ping_result / US_ROUNDTRIP_CM;
+}
+
+// Stop dear Bot !
+void stopBot(){
+   digitalWrite(leftWheelP, LOW);  
+   digitalWrite(leftWheelN, LOW);
+   digitalWrite(rightWheelP, LOW);  
+   digitalWrite(rightWheelN, LOW);
+   digitalWrite(led, HIGH);
+}
+
+// Go straight Bot !
+void moveForward(){
+   moveBot(HIGH, HIGH);
+   digitalWrite(led, LOW);
+}
+
+// No Bot, go back go back ..
+void moveBackward(){
+   moveBot(LOW, LOW);
+}
+   
+// Bot, Turn left !
+void turnLeft(){
+  moveBot(HIGH, LOW);
+  digitalWrite(led, HIGH);
+}
+
+// Bot, Turn right !
+void turnRight(){
+  moveBot(LOW, HIGH);
+  digitalWrite(led, HIGH);
+}
+
+// Generic method to turn bot left/right or move forward/backward
+void moveBot(boolean rightWheel, boolean leftWheel){
+   digitalWrite(leftWheelP, leftWheel);  
+   digitalWrite(leftWheelN, !leftWheel);
+   digitalWrite(rightWheelP, rightWheel);  
+   digitalWrite(rightWheelN, !rightWheel);
+   if(leftWheel != rightWheel)              // While taking turn only one wheel moves, other stays still
+   {
+     if(!leftWheel)
+     {
+      digitalWrite(leftWheelN, LOW);      
+     }
+     if(!rightWheel)
+     {
+      digitalWrite(rightWheelN, LOW);      
+     }
+   }
+}
